@@ -1,11 +1,11 @@
 --[[
-    FPS Booster Pro + Stretch Screen
-    Otimização de desempenho + efeito de esticar tela (vertical).
-    Compatível com PC e Mobile.
+    Aeternus FPS Booster  - Estável
+    Otimização de desempenho + Stretch Screen
+    Compatível com PC e Mobile (toque)
 ]]
 
 -- ============================================================================
--- Services
+-- Serviços
 -- ============================================================================
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -15,11 +15,10 @@ local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local Rendering = settings().Rendering
 local Camera = Workspace.CurrentCamera
 
 -- ============================================================================
--- Configuração
+-- Configuração (estado)
 -- ============================================================================
 local Config = {
     BoostEnabled = false,
@@ -33,23 +32,24 @@ local Config = {
     DisableExplosions = false,
     BlurTextures = false,
     StretchScreen = false,
-    StretchFactor = 0.65,        -- Fator de esticamento (0.50 ~ 1.50)
+    StretchFactor = 0.65,
     ApplyFFlags = false,
 }
 
 -- ============================================================================
--- Estado Original
+-- Estado original para reversão (guardado apenas para Lighting, Terrain, Quality e PostEffects)
 -- ============================================================================
-local OriginalState = {
+local Original = {
     Lighting = {},
     Terrain = {},
-    QualityLevel = nil,
+    Quality = nil,
     TextureQuality = nil,
     PostEffects = {},
 }
 
 local function SaveOriginalState()
-    OriginalState.Lighting = {
+    -- Lighting
+    Original.Lighting = {
         GlobalShadows = Lighting.GlobalShadows,
         FogEnd = Lighting.FogEnd,
         Brightness = Lighting.Brightness,
@@ -58,9 +58,10 @@ local function SaveOriginalState()
         ColorShift_Bottom = Lighting.ColorShift_Bottom,
     }
 
+    -- Terrain
     local terrain = Workspace:FindFirstChild("Terrain")
     if terrain then
-        OriginalState.Terrain = {
+        Original.Terrain = {
             WaterWaveSize = terrain.WaterWaveSize,
             WaterWaveSpeed = terrain.WaterWaveSpeed,
             WaterReflectance = terrain.WaterReflectance,
@@ -68,78 +69,73 @@ local function SaveOriginalState()
         }
     end
 
-    OriginalState.QualityLevel = Rendering.QualityLevel
+    -- Rendering
+    Original.Quality = settings().Rendering.QualityLevel
     pcall(function()
-        OriginalState.TextureQuality = Rendering.TextureQualityOverride
+        Original.TextureQuality = settings().Rendering.TextureQualityOverride
     end)
 
-    OriginalState.PostEffects = {}
+    -- PostEffects
+    Original.PostEffects = {}
     for _, obj in ipairs(Lighting:GetChildren()) do
         if obj:IsA("PostEffect") then
-            OriginalState.PostEffects[obj] = obj.Enabled
+            Original.PostEffects[obj] = obj.Enabled
         end
     end
 end
 
 -- ============================================================================
--- Aplicar FFlags de Textura (automático com "Borrar Texturas")
+-- Funções de otimização (aplicar / reverter)
 -- ============================================================================
 local function ApplyTextureFFlags()
     local setfflag = setfflag
     if not setfflag then return false end
-
-    local textureFlags = {
+    local flags = {
         ["DFIntDebugTextureManagerSkipMips"] = "10",
         ["DFIntTextureCompositorActiveJobs"] = "0",
         ["DFIntPerformanceControlTextureQualityBestUtility"] = "-1",
     }
-
     local okCount = 0
-    for flag, value in pairs(textureFlags) do
-        local ok, err = pcall(function()
-            setfflag(flag, value)
-        end)
+    for k, v in pairs(flags) do
+        local ok, err = pcall(function() setfflag(k, v) end)
         if ok then okCount = okCount + 1 end
     end
     return okCount == 3
 end
 
--- ============================================================================
--- Aplicar / Reverter Otimizações (sem incluir stretch, que é gerenciado separadamente)
--- ============================================================================
 local function ApplyBoost()
     local cfg = Config
 
-    -- Sombras
+    -- Shadows
     Lighting.GlobalShadows = not cfg.DisableShadows
 
-    -- Pós-processamento
-    for obj, _ in pairs(OriginalState.PostEffects) do
+    -- PostProcessing
+    for obj, _ in pairs(Original.PostEffects) do
         if obj and obj.Parent then
             obj.Enabled = not cfg.DisablePostProcessing
         end
     end
 
-    -- Qualidade geral
+    -- Quality
     if cfg.LowQuality then
-        Rendering.QualityLevel = Enum.QualityLevel.Level01
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
     else
-        Rendering.QualityLevel = OriginalState.QualityLevel or Enum.QualityLevel.Level01
+        settings().Rendering.QualityLevel = Original.Quality or Enum.QualityLevel.Level01
     end
 
-    -- Texturas borradas
+    -- Blur Textures
     if cfg.BlurTextures then
         pcall(function()
-            Rendering.TextureQualityOverride = Enum.TextureQuality.Low
+            settings().Rendering.TextureQualityOverride = Enum.TextureQuality.Low
         end)
         ApplyTextureFFlags() -- tenta aplicar FFlags específicas
     else
         pcall(function()
-            Rendering.TextureQualityOverride = OriginalState.TextureQuality or Enum.TextureQuality.Automatic
+            settings().Rendering.TextureQualityOverride = Original.TextureQuality or Enum.TextureQuality.Automatic
         end)
     end
 
-    -- Água
+    -- Water
     local terrain = Workspace:FindFirstChild("Terrain")
     if terrain then
         if cfg.DisableWater then
@@ -148,14 +144,14 @@ local function ApplyBoost()
             terrain.WaterReflectance = 0
             terrain.WaterTransparency = 0
         else
-            terrain.WaterWaveSize = OriginalState.Terrain.WaterWaveSize or 0.5
-            terrain.WaterWaveSpeed = OriginalState.Terrain.WaterWaveSpeed or 1
-            terrain.WaterReflectance = OriginalState.Terrain.WaterReflectance or 0.5
-            terrain.WaterTransparency = OriginalState.Terrain.WaterTransparency or 0.5
+            terrain.WaterWaveSize = Original.Terrain.WaterWaveSize or 0.5
+            terrain.WaterWaveSpeed = Original.Terrain.WaterWaveSpeed or 1
+            terrain.WaterReflectance = Original.Terrain.WaterReflectance or 0.5
+            terrain.WaterTransparency = Original.Terrain.WaterTransparency or 0.5
         end
     end
 
-    -- Partículas
+    -- Particles
     if cfg.DisableParticles then
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
@@ -173,7 +169,7 @@ local function ApplyBoost()
         end
     end
 
-    -- Materiais Plásticos
+    -- Plastic Materials
     if cfg.PlasticMaterials then
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("BasePart") then
@@ -183,7 +179,7 @@ local function ApplyBoost()
         end
     end
 
-    -- Explosões
+    -- Explosions
     if cfg.DisableExplosions then
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("Explosion") then
@@ -193,70 +189,58 @@ local function ApplyBoost()
         end
     end
 
-    -- FFlags gerais (botão separado)
+    -- FFlags gerais (se ativado pelo botão)
     if cfg.ApplyFFlags then
-        ApplyAllFFlags()
+        local setfflag = setfflag
+        if setfflag then
+            local allFlags = {
+                ["DFIntCSGLevelOfDetailSwitchingDistanceL23"] = "0",
+                ["FFlagDebugGraphicsPreferD3D11"] = "True",
+                ["FIntRenderShadowmapBias"] = "0",
+                ["FFlagDisablePostFx"] = "True",
+                ["FFlagDisableParticles"] = "True",
+                ["FFlagDisableDecals"] = "True",
+                ["FFlagNoShadows"] = "True",
+                ["FFlagReduceTextureMemory"] = "True",
+                ["FFlagForceTextureReduction"] = "True",
+            }
+            for k, v in pairs(allFlags) do
+                pcall(function() setfflag(k, v) end)
+            end
+        end
     end
 end
 
 local function RevertBoost()
-    for k, v in pairs(OriginalState.Lighting) do
+    -- Lighting
+    for k, v in pairs(Original.Lighting) do
         Lighting[k] = v
     end
 
+    -- Terrain
     local terrain = Workspace:FindFirstChild("Terrain")
     if terrain then
-        for k, v in pairs(OriginalState.Terrain) do
+        for k, v in pairs(Original.Terrain) do
             terrain[k] = v
         end
     end
 
-    Rendering.QualityLevel = OriginalState.QualityLevel or Enum.QualityLevel.Level01
+    -- Quality
+    settings().Rendering.QualityLevel = Original.Quality or Enum.QualityLevel.Level01
     pcall(function()
-        Rendering.TextureQualityOverride = OriginalState.TextureQuality or Enum.TextureQuality.Automatic
+        settings().Rendering.TextureQualityOverride = Original.TextureQuality or Enum.TextureQuality.Automatic
     end)
 
-    for obj, enabled in pairs(OriginalState.PostEffects) do
+    -- PostEffects
+    for obj, enabled in pairs(Original.PostEffects) do
         if obj and obj.Parent then
             obj.Enabled = enabled
         end
     end
 
+    -- Nota: partículas, decals, materiais e explosões não são revertidos.
     Config.ApplyFFlags = false
 end
-
--- ============================================================================
--- Aplicar todas as FFlags (botão)
--- ============================================================================
-local function ApplyAllFFlags()
-    local setfflag = setfflag
-    if not setfflag then return false end
-
-    local fflags = {
-        ["DFIntDebugTextureManagerSkipMips"] = "10",
-        ["DFIntTextureCompositorActiveJobs"] = "0",
-        ["DFIntPerformanceControlTextureQualityBestUtility"] = "-1",
-        ["DFIntCSGLevelOfDetailSwitchingDistanceL23"] = "0",
-        ["FFlagDebugGraphicsPreferD3D11"] = "True",
-        ["FIntRenderShadowmapBias"] = "0",
-        ["FFlagDisablePostFx"] = "True",
-        ["FFlagDisableParticles"] = "True",
-        ["FFlagDisableDecals"] = "True",
-        ["FFlagNoShadows"] = "True",
-        ["FFlagReduceTextureMemory"] = "True",
-        ["FFlagForceTextureReduction"] = "True",
-    }
-
-    local successCount = 0
-    for flag, value in pairs(fflags) do
-        local ok, err = pcall(function()
-            setfflag(flag, value)
-        end)
-        if ok then successCount = successCount + 1 end
-    end
-    print(string.format("FFlags aplicadas: %d/%d", successCount, table.getn(fflags)))
-    return true
-}
 
 -- ============================================================================
 -- Stretch Screen (gerenciamento separado)
@@ -264,21 +248,17 @@ local function ApplyAllFFlags()
 local stretchConnection = nil
 
 local function ApplyStretch()
-    if Config.StretchScreen then
-        -- Aplica a escala vertical (eixo Y) a cada frame, exatamente como no código original
-        Camera.CFrame = Camera.CFrame * CFrame.new(0, 0, 0,
-            1, 0, 0,
-            0, Config.StretchFactor, 0,
-            0, 0, 1
-        )
-    end
+    local factor = Config.StretchFactor
+    if factor == 1 then return end -- evita multiplicação desnecessária
+    Camera.CFrame = Camera.CFrame * CFrame.new(0,0,0,
+        1, 0, 0,
+        0, factor, 0,
+        0, 0, 1
+    )
 end
 
 local function StartStretch()
-    if stretchConnection then
-        stretchConnection:Disconnect()
-        stretchConnection = nil
-    end
+    if stretchConnection then stretchConnection:Disconnect(); stretchConnection = nil end
     if Config.StretchScreen then
         stretchConnection = RunService.RenderStepped:Connect(ApplyStretch)
     end
@@ -289,22 +269,21 @@ local function StopStretch()
         stretchConnection:Disconnect()
         stretchConnection = nil
     end
-    -- Não restauramos o CFrame para evitar travamentos; o usuário pode desativar e o efeito para.
-    -- Para remover a distorção acumulada, reinicie o jogo ou ajuste o fator para 1.0.
+    -- Não restaura CFrame para não travar.
 end
 
 -- ============================================================================
--- UI - Glassmorphism (estilo Aeternus)
+-- UI - Glassmorphism (com scroll)
 -- ============================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "FPSBoosterPro"
 ScreenGui.Parent = PlayerGui
 
--- Fundo blur
+-- Blur de fundo
 local BlurBackground = Instance.new("Frame")
 BlurBackground.Size = UDim2.new(1, 0, 1, 0)
 BlurBackground.BackgroundTransparency = 0.85
-BlurBackground.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+BlurBackground.BackgroundColor3 = Color3.fromRGB(20,20,30)
 BlurBackground.BorderSizePixel = 0
 BlurBackground.Parent = ScreenGui
 local BlurEffect = Instance.new("BlurEffect")
@@ -313,10 +292,10 @@ BlurEffect.Parent = BlurBackground
 
 -- Container principal
 local Container = Instance.new("Frame")
-Container.Size = UDim2.new(0, 500, 0, 420) -- um pouco mais alto para o novo slider
-Container.Position = UDim2.new(0.5, -250, 0.5, -210)
+Container.Size = UDim2.new(0, 500, 0, 440)
+Container.Position = UDim2.new(0.5, -250, 0.5, -220)
 Container.BackgroundTransparency = 0.5
-Container.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+Container.BackgroundColor3 = Color3.fromRGB(30,30,40)
 Container.BorderSizePixel = 0
 Container.ClipsDescendants = true
 Container.Parent = ScreenGui
@@ -328,7 +307,7 @@ ContainerCorner.Parent = Container
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 36)
 TopBar.BackgroundTransparency = 0.6
-TopBar.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+TopBar.BackgroundColor3 = Color3.fromRGB(40,40,55)
 TopBar.BorderSizePixel = 0
 TopBar.Parent = Container
 local TopBarCorner = Instance.new("UICorner")
@@ -336,10 +315,10 @@ TopBarCorner.CornerRadius = UDim.new(0, 12)
 TopBarCorner.Parent = TopBar
 
 local Title = Instance.new("TextLabel")
-Title.Text = "FPS Booster Pro"
+Title.Text = "Aeterus FPS Booster"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
-Title.TextColor3 = Color3.fromRGB(200, 200, 255)
+Title.TextColor3 = Color3.fromRGB(200,200,255)
 Title.BackgroundTransparency = 1
 Title.Size = UDim2.new(0, 200, 1, 0)
 Title.Position = UDim2.new(0, 15, 0, 0)
@@ -351,9 +330,9 @@ local MinimizeBtn = Instance.new("TextButton")
 MinimizeBtn.Text = "—"
 MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.TextSize = 20
-MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeBtn.TextColor3 = Color3.fromRGB(255,255,255)
 MinimizeBtn.BackgroundTransparency = 0.8
-MinimizeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(80,80,120)
 MinimizeBtn.BorderSizePixel = 0
 MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 MinimizeBtn.Position = UDim2.new(1, -75, 0.5, -15)
@@ -365,9 +344,9 @@ local CloseBtn = Instance.new("TextButton")
 CloseBtn.Text = "✕"
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 18
-CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+CloseBtn.TextColor3 = Color3.fromRGB(255,100,100)
 CloseBtn.BackgroundTransparency = 0.8
-CloseBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(80,80,120)
 CloseBtn.BorderSizePixel = 0
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -35, 0.5, -15)
@@ -414,7 +393,7 @@ local function CreateToggle(parent, text, configKey, default)
     label.Text = text
     label.Font = Enum.Font.Gotham
     label.TextSize = 14
-    label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    label.TextColor3 = Color3.fromRGB(220,220,220)
     label.BackgroundTransparency = 1
     label.Size = UDim2.new(0, 200, 1, 0)
     label.Position = UDim2.new(0, 5, 0, 0)
@@ -424,51 +403,40 @@ local function CreateToggle(parent, text, configKey, default)
     local toggleFrame = Instance.new("Frame")
     toggleFrame.Size = UDim2.new(0, 48, 0, 24)
     toggleFrame.Position = UDim2.new(1, -58, 0.5, -12)
-    toggleFrame.BackgroundColor3 = default and Color3.fromRGB(80, 160, 255) or Color3.fromRGB(80, 80, 80)
+    toggleFrame.BackgroundColor3 = default and Color3.fromRGB(80,160,255) or Color3.fromRGB(80,80,80)
     toggleFrame.BorderSizePixel = 0
     toggleFrame.Parent = frame
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(1, 0)
-    toggleCorner.Parent = toggleFrame
+    Instance.new("UICorner", toggleFrame).CornerRadius = UDim.new(1,0)
 
     local knob = Instance.new("Frame")
     knob.Size = UDim2.new(0, 20, 0, 20)
     knob.Position = default and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
     knob.BorderSizePixel = 0
     knob.Parent = toggleFrame
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = knob
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
 
     local state = default or false
     local function setState(val)
         state = val
         Config[configKey] = val
         local posGoal = val and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-        local colorGoal = val and Color3.fromRGB(80, 160, 255) or Color3.fromRGB(80, 80, 80)
+        local colorGoal = val and Color3.fromRGB(80,160,255) or Color3.fromRGB(80,80,80)
         TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = posGoal}):Play()
         TweenService:Create(toggleFrame, TweenInfo.new(0.2), {BackgroundColor3 = colorGoal}):Play()
-
-        -- Aplica as mudanças
+        -- Aplica mudanças
         if Config.BoostEnabled then
             ApplyBoost()
         end
-
-        -- Gerencia o stretch separadamente
+        -- Gerencia stretch separadamente
         if configKey == "StretchScreen" then
-            if val then
-                StartStretch()
-            else
-                StopStretch()
-            end
+            if val then StartStretch() else StopStretch() end
         end
     end
 
     local function onClick()
         setState(not state)
     end
-
     toggleFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             onClick()
@@ -486,7 +454,6 @@ local function CreateToggle(parent, text, configKey, default)
     }
 end
 
--- Slider para fator de esticamento
 local function CreateSlider(parent, text, min, max, default, callback, step)
     step = step or 0.05
     local frame = Instance.new("Frame")
@@ -498,7 +465,7 @@ local function CreateSlider(parent, text, min, max, default, callback, step)
     label.Text = text .. ": " .. string.format("%.2f", default)
     label.Font = Enum.Font.Gotham
     label.TextSize = 14
-    label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    label.TextColor3 = Color3.fromRGB(220,220,220)
     label.BackgroundTransparency = 1
     label.Size = UDim2.new(0, 180, 1, 0)
     label.Position = UDim2.new(0, 5, 0, 0)
@@ -508,25 +475,25 @@ local function CreateSlider(parent, text, min, max, default, callback, step)
     local sliderFrame = Instance.new("Frame")
     sliderFrame.Size = UDim2.new(0, 180, 0, 6)
     sliderFrame.Position = UDim2.new(1, -190, 0.5, -3)
-    sliderFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(60,60,70)
     sliderFrame.BorderSizePixel = 0
     sliderFrame.Parent = frame
-    Instance.new("UICorner", sliderFrame).CornerRadius = UDim.new(0, 3)
+    Instance.new("UICorner", sliderFrame).CornerRadius = UDim.new(0,3)
 
     local fill = Instance.new("Frame")
     fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(120, 180, 255)
+    fill.BackgroundColor3 = Color3.fromRGB(120,180,255)
     fill.BorderSizePixel = 0
     fill.Parent = sliderFrame
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 3)
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0,3)
 
     local knob = Instance.new("Frame")
     knob.Size = UDim2.new(0, 14, 0, 14)
     knob.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
     knob.BorderSizePixel = 0
     knob.Parent = sliderFrame
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
 
     local value = default
     local function updateDisplay()
@@ -580,64 +547,60 @@ local function CreateSlider(parent, text, min, max, default, callback, step)
 end
 
 -- ============================================================================
--- Construir UI
+-- Construção da UI
 -- ============================================================================
--- Toggle geral Boost
-local boostToggleFrame = Instance.new("Frame")
-boostToggleFrame.Size = UDim2.new(1, 0, 0, 50)
-boostToggleFrame.BackgroundTransparency = 1
-boostToggleFrame.Parent = ScrollFrame
+-- Toggle Boost
+local boostFrame = Instance.new("Frame")
+boostFrame.Size = UDim2.new(1, 0, 0, 50)
+boostFrame.BackgroundTransparency = 1
+boostFrame.Parent = ScrollFrame
 
 local boostLabel = Instance.new("TextLabel")
 boostLabel.Text = "Modo Boost"
 boostLabel.Font = Enum.Font.GothamBold
 boostLabel.TextSize = 16
-boostLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+boostLabel.TextColor3 = Color3.fromRGB(255,255,255)
 boostLabel.BackgroundTransparency = 1
 boostLabel.Size = UDim2.new(0, 150, 1, 0)
 boostLabel.Position = UDim2.new(0, 5, 0, 0)
 boostLabel.TextXAlignment = Enum.TextXAlignment.Left
-boostLabel.Parent = boostToggleFrame
+boostLabel.Parent = boostFrame
 
 local boostToggle = Instance.new("Frame")
 boostToggle.Size = UDim2.new(0, 48, 0, 24)
 boostToggle.Position = UDim2.new(1, -58, 0.5, -12)
-boostToggle.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+boostToggle.BackgroundColor3 = Color3.fromRGB(80,80,80)
 boostToggle.BorderSizePixel = 0
-boostToggle.Parent = boostToggleFrame
-local boostCorner = Instance.new("UICorner")
-boostCorner.CornerRadius = UDim.new(1, 0)
-boostCorner.Parent = boostToggle
+boostToggle.Parent = boostFrame
+Instance.new("UICorner", boostToggle).CornerRadius = UDim.new(1,0)
 
 local boostKnob = Instance.new("Frame")
 boostKnob.Size = UDim2.new(0, 20, 0, 20)
 boostKnob.Position = UDim2.new(0, 2, 0.5, -10)
-boostKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+boostKnob.BackgroundColor3 = Color3.fromRGB(255,255,255)
 boostKnob.BorderSizePixel = 0
 boostKnob.Parent = boostToggle
-local boostKnobCorner = Instance.new("UICorner")
-boostKnobCorner.CornerRadius = UDim.new(1, 0)
-boostKnobCorner.Parent = boostKnob
+Instance.new("UICorner", boostKnob).CornerRadius = UDim.new(1,0)
 
 local boostState = false
 local function setBoostState(val)
     boostState = val
     Config.BoostEnabled = val
     local posGoal = val and UDim2.new(1, -22, 0.5, -10) or UDim2.new(0, 2, 0.5, -10)
-    local colorGoal = val and Color3.fromRGB(80, 160, 255) or Color3.fromRGB(80, 80, 80)
+    local colorGoal = val and Color3.fromRGB(80,160,255) or Color3.fromRGB(80,80,80)
     TweenService:Create(boostKnob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = posGoal}):Play()
     TweenService:Create(boostToggle, TweenInfo.new(0.2), {BackgroundColor3 = colorGoal}):Play()
     if val then
         ApplyBoost()
     else
         RevertBoost()
+        StopStretch() -- se o stretch estiver ativo, para (mas o toggle de stretch é independente)
     end
 end
 
 local function onBoostClick()
     setBoostState(not boostState)
 end
-
 boostToggle.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         onBoostClick()
@@ -649,67 +612,86 @@ boostKnob.InputBegan:Connect(function(input)
     end
 end)
 
--- Toggles padrão
+-- Toggles individuais
 local toggleKeys = {
-    {key = "DisableShadows", label = "Desativar Sombras"},
-    {key = "DisablePostProcessing", label = "Desativar Pós-Processamento"},
-    {key = "LowQuality", label = "Modo Baixa Qualidade"},
-    {key = "DisableWater", label = "Desativar Água"},
-    {key = "DisableParticles", label = "Desativar Partículas"},
-    {key = "RemoveDecals", label = "Remover Decals"},
-    {key = "PlasticMaterials", label = "Materiais Plásticos / Sem Reflexo"},
-    {key = "DisableExplosions", label = "Desativar Explosões"},
-    {key = "BlurTextures", label = "Borrar Texturas"},
-    {key = "StretchScreen", label = "Esticar Tela (vertical)"}, -- NOVO
+    {key="DisableShadows", label="Desativar Sombras"},
+    {key="DisablePostProcessing", label="Desativar Pós-Processamento"},
+    {key="LowQuality", label="Modo Baixa Qualidade"},
+    {key="DisableWater", label="Desativar Água"},
+    {key="DisableParticles", label="Desativar Partículas"},
+    {key="RemoveDecals", label="Remover Decals"},
+    {key="PlasticMaterials", label="Materiais Plásticos / Sem Reflexo"},
+    {key="DisableExplosions", label="Desativar Explosões"},
+    {key="BlurTextures", label="Borrar Texturas"},
+    {key="StretchScreen", label="Esticar Tela (vertical)"},
 }
-
 local toggles = {}
 for _, t in ipairs(toggleKeys) do
     toggles[t.key] = CreateToggle(ScrollFrame, t.label, t.key, false)
 end
 
--- Slider para fator de esticamento
+-- Slider Stretch Factor
 local stretchSlider = CreateSlider(ScrollFrame, "Fator de Esticamento", 0.50, 1.50, Config.StretchFactor, function(val)
     Config.StretchFactor = val
-    -- Se o stretch estiver ativo, a mudança é aplicada automaticamente no próximo frame
+    -- Se o stretch estiver ativo, o próximo frame aplica automaticamente
 end, 0.05)
 
 -- Botão Aplicar FFlags
 local ffBtn = Instance.new("TextButton")
-ffBtn.Size = UDim2.new(1, 0, 0, 36)
-ffBtn.Position = UDim2.new(0, 0, 0, 10)
+ffBtn.Size = UDim2.new(1, -20, 0, 36)
+ffBtn.Position = UDim2.new(0, 10, 0, 10)
 ffBtn.Text = "Aplicar FFlags"
 ffBtn.Font = Enum.Font.GothamBold
 ffBtn.TextSize = 14
-ffBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 90)
+ffBtn.BackgroundColor3 = Color3.fromRGB(60,60,90)
 ffBtn.BorderSizePixel = 0
 ffBtn.Parent = ScrollFrame
-Instance.new("UICorner", ffBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UICorner", ffBtn).CornerRadius = UDim.new(0,6)
 ffBtn.MouseButton1Click:Connect(function()
-    if ApplyAllFFlags() then
-        ffBtn.Text = "FFlags Aplicadas!"
-        task.wait(1.5)
-        ffBtn.Text = "Aplicar FFlags"
-        Config.ApplyFFlags = true
-        if Config.BoostEnabled then ApplyBoost() end
-    else
+    local setfflag = setfflag
+    if not setfflag then
         ffBtn.Text = "setfflag indisponível"
         task.wait(2)
         ffBtn.Text = "Aplicar FFlags"
+        return
     end
+    local flags = {
+        ["DFIntDebugTextureManagerSkipMips"] = "10",
+        ["DFIntTextureCompositorActiveJobs"] = "0",
+        ["DFIntPerformanceControlTextureQualityBestUtility"] = "-1",
+        ["DFIntCSGLevelOfDetailSwitchingDistanceL23"] = "0",
+        ["FFlagDebugGraphicsPreferD3D11"] = "True",
+        ["FIntRenderShadowmapBias"] = "0",
+        ["FFlagDisablePostFx"] = "True",
+        ["FFlagDisableParticles"] = "True",
+        ["FFlagDisableDecals"] = "True",
+        ["FFlagNoShadows"] = "True",
+        ["FFlagReduceTextureMemory"] = "True",
+        ["FFlagForceTextureReduction"] = "True",
+    }
+    local count = 0
+    for k, v in pairs(flags) do
+        local ok, err = pcall(function() setfflag(k, v) end)
+        if ok then count = count + 1 end
+    end
+    ffBtn.Text = "FFlags: " .. count .. "/" .. table.getn(flags)
+    task.wait(2)
+    ffBtn.Text = "Aplicar FFlags"
+    Config.ApplyFFlags = true
+    if Config.BoostEnabled then ApplyBoost() end
 end)
 
 -- Botão Restaurar Padrões
 local restoreBtn = Instance.new("TextButton")
-restoreBtn.Size = UDim2.new(1, 0, 0, 36)
-restoreBtn.Position = UDim2.new(0, 0, 0, 56)
+restoreBtn.Size = UDim2.new(1, -20, 0, 36)
+restoreBtn.Position = UDim2.new(0, 10, 0, 56)
 restoreBtn.Text = "Restaurar Padrões"
 restoreBtn.Font = Enum.Font.GothamBold
 restoreBtn.TextSize = 14
-restoreBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 60)
+restoreBtn.BackgroundColor3 = Color3.fromRGB(90,60,60)
 restoreBtn.BorderSizePixel = 0
 restoreBtn.Parent = ScrollFrame
-Instance.new("UICorner", restoreBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UICorner", restoreBtn).CornerRadius = UDim.new(0,6)
 restoreBtn.MouseButton1Click:Connect(function()
     setBoostState(false)
     for key, toggle in pairs(toggles) do
@@ -720,11 +702,11 @@ restoreBtn.MouseButton1Click:Connect(function()
     Config.StretchFactor = 0.65
     stretchSlider:SetValue(0.65)
     StopStretch()
-    -- Restaura CFrame? Não fazemos isso para não travar a câmera.
+    -- Não restauramos CFrame para não travar.
 end)
 
 -- ============================================================================
--- Minimizar / Fechar / Arrastar
+-- Controles de janela
 -- ============================================================================
 local minimized = false
 local originalHeight = Container.Size.Y.Offset
@@ -769,9 +751,9 @@ end)
 -- Inicialização
 -- ============================================================================
 SaveOriginalState()
-print("FPS Booster Pro + Stretch Screen carregado.")
 
--- Se o StretchScreen estiver ativo no Config (carregado do perfil, se houver), inicia
-if Config.StretchScreen then
-    StartStretch()
-end
+-- Se o Boost estiver ativo no Config (caso tenha perfil), aplica
+-- (neste exemplo simples, começa desativado)
+setBoostState(false)
+
+print("FPS Booster Pro carregado com sucesso!")
